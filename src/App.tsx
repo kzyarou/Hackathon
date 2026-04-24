@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { Terminal, CreditCard, Activity, Cpu, Zap, ArrowRight, ShieldCheck, Database, Globe, Lock, List, Menu, X, ChevronLeft, ChevronRight, Wallet } from 'lucide-react';
+import { Terminal, CreditCard, Activity, Cpu, Zap, ArrowRight, ShieldCheck, Database, Globe, Lock, List, Menu, X, ChevronLeft, ChevronRight, Wallet, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AgentMessage, Transaction, WorkerType, AgentStatus } from './types';
 
@@ -51,6 +51,7 @@ export default function App() {
   const [wallets, setWallets] = useState<Array<{ id: string; address?: string; blockchain?: string; state?: string }>>([]);
   const [isLoadingWallets, setIsLoadingWallets] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
+  const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -840,8 +841,26 @@ export default function App() {
                   </p>
                 )}
                 {wallets.map((w, i) => (
-                  <div key={w.id || i} className="flex justify-between items-center text-[10px] border-b border-[#1F1F23] pb-1">
-                    <span className="text-[#00FF85] font-mono truncate max-w-[80px]">{w.address?.slice(0, 10)}...</span>
+                  <div
+                    key={w.id || i}
+                    className="flex justify-between items-center text-[10px] border-b border-[#1F1F23] pb-1 cursor-pointer hover:bg-white/5 px-1 rounded transition-colors group"
+                    onClick={() => {
+                      if (w.address) {
+                        navigator.clipboard.writeText(w.address);
+                        setCopiedWalletId(w.id);
+                        setTimeout(() => setCopiedWalletId(null), 2000);
+                      }
+                    }}
+                    title="Click to copy full address"
+                  >
+                    <span className="text-[#00FF85] font-mono truncate max-w-[80px] flex items-center gap-1">
+                      {w.address?.slice(0, 10)}...
+                      {copiedWalletId === w.id ? (
+                        <Check size={10} className="text-[#00FF85]" />
+                      ) : (
+                        <Copy size={10} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                      )}
+                    </span>
                     <span className="text-[8px] text-[#8E9299] uppercase">{w.blockchain || 'ETH-SEP'}</span>
                     <span className={`text-[8px] ${w.state === 'LIVE' ? 'text-[#00FF85]' : 'text-[#FFB000]'}`}>{w.state || 'pending'}</span>
                   </div>

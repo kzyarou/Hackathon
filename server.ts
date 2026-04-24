@@ -5,9 +5,19 @@ import fs from "fs";
 import dotenv from "dotenv";
 import { v4 as uuidv4 } from 'uuid';
 import fetch from "node-fetch";
+import { initiateDeveloperControlledWalletsClient, registerEntitySecretCiphertext } from '@circle-fin/developer-controlled-wallets';
 
 dotenv.config();
 dotenv.config({ path: '.env.local', override: true });
+
+// Circle SDK client helper (returns null if config invalid)
+function getCircleClient() {
+  const apiKey = process.env.CIRCLE_API_KEY?.trim() || '';
+  const entitySecret = process.env.ENTITY_SECRET?.trim() || '';
+  const hasValidKey = apiKey.includes(':') && apiKey.split(':').length >= 3;
+  if (!hasValidKey || !entitySecret) return null;
+  return initiateDeveloperControlledWalletsClient({ apiKey, entitySecret });
+}
 
 async function startServer() {
   const app = express();
@@ -202,6 +212,96 @@ async function startServer() {
         error: "Blockchain Settlement Failed",
         details: err instanceof Error ? err.message : "Undefined error"
       });
+    }
+  });
+
+  // ── Circle SDK Wallet Management (from arc-engine integration) ──
+
+  // Register entity secret ciphertext (one-time setup)
+  app.post("/api/register", async (req, res) => {
+    const apiKey = process.env.CIRCLE_API_KEY?.trim() || '';
+    const entitySecret = process.env.ENTITY_SECRET?.trim() || '';
+    if (!apiKey || !entitySecret) {
+      return res.status(400).json({ success: false, error: 'CIRCLE_API_KEY and ENTITY_SECRET required' });
+    }
+    try {
+      const response = await registerEntitySecretCiphertext({ apiKey, entitySecret });
+      return res.json({
+        success: true,
+        recoveryFile: response.data?.recoveryFile,
+        message: 'Engine registered successfully. Save the recovery file!'
+      });
+    } catch (err: any) {
+      console.error('[REGISTER]', err);
+      return res.status(500).json({ success: false, error: err?.message || 'Registration failed' });
+    }
+  });
+
+  // List all wallets
+  app.get("/api/wallets", async (req, res) => {
+    const client = getCircleClient();
+    if (!client) {
+      return res.status(503).json({ success: false, error: 'Circle SDK not configured (needs ENV:ID:SECRET key format)' });
+    }
+    try {
+      const response = await client.listWallets({});
+      return res.json({
+        success: true,
+        wallets: response.data?.wallets || [],
+        count: response.data?.wallets?.length || 0
+      });
+    } catch (err: any) {
+      console.error('[WALLETS LIST]', err);
+      return res.status(500).json({ success: false, error: err?.message || 'Failed to list wallets' });
+    }
+  });
+
+  // Create wallet set + wallet (returns address for agent use)
+  app.post("/api/wallets", async (req, res) => {
+    const client = getCircleClient();
+    if (!client) {
+      return res.status(503).json({ success: false, error: 'Circle SDK not configured (needs ENV:ID:SECRET key format)' });
+    }
+    const { name = 'Agent Wallet', blockchain = 'ETH-SEPOLIA', accountType = 'SCA' } = req.body;
+    try {
+      const setRes = await client.createWalletSet({ name: `${name} Set` });
+      const walletSetId = setRes.data?.walletSet?.id;
+      if (!walletSetId) throw new Error('Wallet set creation returned no ID');
+
+      const walletRes = await client.createWallets({
+        accountType: accountType as 'SCA' | 'EOA',
+        blockchains: [blockchain],
+        count: 1,
+        walletSetId
+      });
+
+      const wallet = walletRes.data?.wallets?.[0];
+      return res.json({
+        success: true,
+        walletSetId,
+        wallet: wallet || null,
+        address: wallet?.address || null,
+        message: wallet ? `Wallet created on ${blockchain}` : 'Wallet creation failed'
+      });
+    } catch (err: any) {
+      console.error('[WALLET CREATE]', err);
+      return res.status(500).json({ success: false, error: err?.message || 'Wallet creation failed' });
+    }
+  });
+
+  // Get wallet details by ID
+  app.get("/api/wallets/:id", async (req, res) => {
+    const client = getCircleClient();
+    if (!client) {
+      return res.status(503).json({ success: false, error: 'Circle SDK not configured' });
+    }
+    try {
+      const response = await client.listWallets({});
+      const wallet = (response.data?.wallets || []).find((w: any) => w.id === req.params.id);
+      if (!wallet) return res.status(404).json({ success: false, error: 'Wallet not found' });
+      return res.json({ success: true, wallet });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Failed to get wallet' });
     }
   });
 

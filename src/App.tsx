@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { Terminal, CreditCard, Activity, Cpu, Zap, ArrowRight, ShieldCheck, Database, Globe, Lock, List, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Terminal, CreditCard, Activity, Cpu, Zap, ArrowRight, ShieldCheck, Database, Globe, Lock, List, Menu, X, ChevronLeft, ChevronRight, Wallet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AgentMessage, Transaction, WorkerType, AgentStatus } from './types';
 
@@ -46,6 +46,11 @@ export default function App() {
   
   // Demo mode for hackathon presentations when API quota is exhausted
   const [demoMode, setDemoMode] = useState(false);
+
+  // Circle wallet management (arc-engine integration)
+  const [wallets, setWallets] = useState<Array<{ id: string; address?: string; blockchain?: string; state?: string }>>([]);
+  const [isLoadingWallets, setIsLoadingWallets] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -177,6 +182,66 @@ export default function App() {
     const hasValidKey = key.includes(':') && key.split(':').length >= 3;
     const hasValidWallet = walletId && walletId !== '00000000-0000-0000-0000-000000000000';
     return hasValidKey && hasValidWallet;
+  };
+
+  // ── Circle Wallet Management (arc-engine integration) ──
+  const fetchWallets = async () => {
+    setIsLoadingWallets(true);
+    setWalletError(null);
+    try {
+      const res = await fetch('/api/wallets');
+      const data = await res.json();
+      if (data.success) {
+        setWallets(data.wallets || []);
+      } else {
+        setWalletError(data.error || 'Failed to load wallets');
+      }
+    } catch (err: any) {
+      setWalletError(err?.message || 'Network error');
+    } finally {
+      setIsLoadingWallets(false);
+    }
+  };
+
+  const createWallet = async () => {
+    setIsLoadingWallets(true);
+    setWalletError(null);
+    try {
+      const res = await fetch('/api/wallets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Agent Wallet', blockchain: 'ETH-SEPOLIA', accountType: 'SCA' })
+      });
+      const data = await res.json();
+      if (data.success && data.wallet) {
+        setWallets(prev => [...prev, data.wallet]);
+        addMessage('System', `✅ New agent wallet created: ${data.address?.slice(0, 12)}... on ${data.wallet.blockchain || 'ETH-SEPOLIA'}`);
+      } else {
+        setWalletError(data.error || 'Wallet creation failed');
+      }
+    } catch (err: any) {
+      setWalletError(err?.message || 'Network error');
+    } finally {
+      setIsLoadingWallets(false);
+    }
+  };
+
+  const registerEngine = async () => {
+    setIsLoadingWallets(true);
+    setWalletError(null);
+    try {
+      const res = await fetch('/api/register', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        addMessage('System', '✅ Circle engine registered! Save the recovery file from server logs.');
+      } else {
+        setWalletError(data.error || 'Registration failed');
+      }
+    } catch (err: any) {
+      setWalletError(err?.message || 'Network error');
+    } finally {
+      setIsLoadingWallets(false);
+    }
   };
 
   // Mock response generator for demo mode when API quota is exhausted
@@ -730,6 +795,64 @@ export default function App() {
                   Sub-cent Mandate<br/>Active & Enforced
                 </div>
               </div>
+            </section>
+
+            {/* Circle Wallet Manager — arc-engine integration */}
+            <section className="p-4 rounded-lg bg-black/40 border border-[#1F1F23]">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-[10px] text-[#8E9299] uppercase tracking-tight border-l-2 border-[#00FF85] pl-2 font-bold flex items-center gap-2">
+                  <Wallet size={12} className="text-[#00FF85]" /> Circle Wallets
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={fetchWallets}
+                    disabled={isLoadingWallets}
+                    className="px-2 py-1 text-[9px] bg-[#1F1F23] text-[#00D1FF] rounded hover:bg-[#2A2A2E] transition-colors disabled:opacity-50"
+                  >
+                    {isLoadingWallets ? '...' : 'Refresh'}
+                  </button>
+                  <button
+                    onClick={createWallet}
+                    disabled={isLoadingWallets}
+                    className="px-2 py-1 text-[9px] bg-[#00FF85]/20 text-[#00FF85] rounded hover:bg-[#00FF85]/30 transition-colors disabled:opacity-50"
+                  >
+                    + Create
+                  </button>
+                </div>
+              </div>
+
+              {walletError && (
+                <div className="mb-2 p-2 bg-[#FF4D4D]/10 border border-[#FF4D4D]/30 rounded text-[9px] text-[#FF4D4D]">
+                  {walletError}
+                </div>
+              )}
+
+              <div className="space-y-1 max-h-[120px] overflow-y-auto scrollbar-none">
+                {wallets.length === 0 && !isLoadingWallets && (
+                  <p className="text-[9px] text-[#8E9299] opacity-50 italic text-center py-2">
+                    No wallets found. Click Create or check Circle config.
+                  </p>
+                )}
+                {wallets.map((w, i) => (
+                  <div key={w.id || i} className="flex justify-between items-center text-[10px] border-b border-[#1F1F23] pb-1">
+                    <span className="text-[#00FF85] font-mono truncate max-w-[80px]">{w.address?.slice(0, 10)}...</span>
+                    <span className="text-[8px] text-[#8E9299] uppercase">{w.blockchain || 'ETH-SEP'}</span>
+                    <span className={`text-[8px] ${w.state === 'LIVE' ? 'text-[#00FF85]' : 'text-[#FFB000]'}`}>{w.state || 'pending'}</span>
+                  </div>
+                ))}
+              </div>
+
+              {!isCircleConfigValid() && (
+                <div className="mt-2 pt-2 border-t border-[#1F1F23]">
+                  <button
+                    onClick={registerEngine}
+                    disabled={isLoadingWallets}
+                    className="w-full px-2 py-1.5 text-[9px] bg-[#FFB000]/20 text-[#FFB000] rounded hover:bg-[#FFB000]/30 transition-colors disabled:opacity-50"
+                  >
+                    Register Entity Secret (One-time)
+                  </button>
+                </div>
+              )}
             </section>
 
             <section>

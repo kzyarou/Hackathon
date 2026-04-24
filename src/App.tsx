@@ -52,6 +52,7 @@ export default function App() {
   const [isLoadingWallets, setIsLoadingWallets] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
+  const [engineRegistered, setEngineRegistered] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -222,6 +223,11 @@ export default function App() {
           addMessage('System', `⚠️ ${data.info} Simulated wallet: ${data.address?.slice(0, 12)}...`);
         } else {
           addMessage('System', `✅ New agent wallet created: ${data.address?.slice(0, 12)}... on ${data.wallet.blockchain || 'ETH-SEPOLIA'}`);
+          // Auto-refresh wallet list and suggest updating env
+          setTimeout(() => {
+            fetchWallets();
+            addMessage('System', `💡 Copy wallet UUID ${data.wallet.id} into .env.local CIRCLE_WALLET_ID to enable live payments.`);
+          }, 500);
         }
       } else {
         setWalletError(data.error || 'Wallet creation failed');
@@ -240,9 +246,13 @@ export default function App() {
       const res = await fetch('/api/register', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
+        setEngineRegistered(true);
         addMessage('System', '✅ Circle engine registered! Save the recovery file from server logs.');
       } else if (data.demo) {
         addMessage('System', `⚠️ ${data.info || 'Hackathon demo mode active.'} You can still create demo wallets or run the swarm without real Circle integration.`);
+      } else if (data.error?.includes('already been set')) {
+        setEngineRegistered(true);
+        addMessage('System', 'ℹ️ Entity secret already registered. You can create wallets now.');
       } else {
         setWalletError(data.error || 'Registration failed');
       }
@@ -855,21 +865,24 @@ export default function App() {
                     }}
                     title="Click to copy full address"
                   >
-                    <span className="text-[#00FF85] font-mono truncate max-w-[80px] flex items-center gap-1">
-                      {w.address?.slice(0, 10)}...
-                      {copiedWalletId === w.id ? (
-                        <Check size={10} className="text-[#00FF85]" />
-                      ) : (
-                        <Copy size={10} className="opacity-0 group-hover:opacity-50 transition-opacity" />
-                      )}
-                    </span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[#00FF85] font-mono truncate max-w-[80px] flex items-center gap-1">
+                        {w.address?.slice(0, 10)}...
+                        {copiedWalletId === w.id ? (
+                          <Check size={10} className="text-[#00FF85]" />
+                        ) : (
+                          <Copy size={10} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                        )}
+                      </span>
+                      <span className="text-[7px] text-[#8E9299] font-mono truncate max-w-[100px]" title="Wallet UUID (click address to copy)">{w.id?.slice(0, 14)}...</span>
+                    </div>
                     <span className="text-[8px] text-[#8E9299] uppercase">{w.blockchain || 'ETH-SEP'}</span>
                     <span className={`text-[8px] ${w.state === 'LIVE' ? 'text-[#00FF85]' : 'text-[#FFB000]'}`}>{w.state || 'pending'}</span>
                   </div>
                 ))}
               </div>
 
-              {!isCircleConfigValid() && (
+              {(!isCircleConfigValid() && !engineRegistered) && (
                 <div className="mt-2 pt-2 border-t border-[#1F1F23]">
                   <button
                     onClick={registerEngine}

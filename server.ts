@@ -56,7 +56,14 @@ async function startServer() {
     let balance = "0.00";
     let balanceDetails = null;
 
-    if (CIRCLE_API_KEY && walletId !== "PENDING_CONFIG" && !isAddress) {
+    // Check for test/demo balance when Circle wallet is not properly configured
+    const testBalance = process.env.TEST_USDC_BALANCE?.trim();
+    const hasTestBalance = testBalance && testBalance !== '0' && walletId === "00000000-0000-0000-0000-000000000000";
+    
+    if (hasTestBalance) {
+      balance = testBalance;
+      balanceDetails = { demo: true, token: 'USDC', amount: testBalance };
+    } else if (CIRCLE_API_KEY && walletId !== "PENDING_CONFIG" && !isAddress) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
       
@@ -352,26 +359,42 @@ async function startServer() {
     }
   });
 
-  // Get wallet balance (USDC) by wallet ID
+  // Get wallet balance (USDC) by wallet ID using Circle REST API
   app.get("/api/wallets/:id/balance", async (req, res) => {
-    const client = getCircleClient();
-    if (!client) {
-      return res.json({ success: false, error: 'Circle SDK not configured', demo: true, balance: '0.00' });
+    const apiKey = process.env.CIRCLE_API_KEY?.trim() || '';
+    if (!apiKey || apiKey === 'MY_CIRCLE_API_KEY') {
+      return res.json({ success: false, error: 'Circle API not configured', demo: true, balance: '0.00' });
     }
     try {
-      // Circle SDK getWalletTokenBalance or listWallets with ID
-      const response = await client.listWallets({});
-      const wallet = (response.data?.wallets || []).find((w: any) => w.id === req.params.id);
-      if (!wallet) return res.status(404).json({ success: false, error: 'Wallet not found' });
+      const isSandbox = apiKey.startsWith('TEST_');
+      const baseUrl = isSandbox ? 'https://api-sandbox.circle.com' : 'https://api.circle.com';
 
-      // Try to get balance from wallet object (SDK may return balances in extended data)
-      const walletData = wallet as any;
-      const balances = walletData.balances || [];
-      const usdcBalance = balances.find((b: any) => b?.token?.symbol === 'USDC' || b?.token?.name?.includes('USD'));
+      // Use Circle REST API to get wallet balances
+      const balanceRes = await fetch(`${baseUrl}/v1/wallets/${req.params.id}/balances`, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!balanceRes.ok) {
+        const errorText = await balanceRes.text();
+        console.error('[BALANCE FETCH]', errorText);
+        return res.json({ success: false, error: `Circle API error: ${balanceRes.status}`, balance: '0.00' });
+      }
+
+      const balanceData: any = await balanceRes.json();
+      const balances = balanceData.data || [];
+      const usdcBalance = balances.find((b: any) =>
+        b?.token?.symbol === 'USDC' ||
+        b?.token?.name?.includes('USD') ||
+        b?.currency === 'USD'
+      );
       const balance = usdcBalance?.amount || '0.00';
 
-      return res.json({ success: true, balance, walletId: req.params.id, address: wallet.address });
+      return res.json({ success: true, balance, walletId: req.params.id, token: usdcBalance?.token });
     } catch (err: any) {
+      console.error('[BALANCE ERROR]', err);
       return res.json({ success: false, error: err?.message || 'Failed to get balance', balance: '0.00' });
     }
   });

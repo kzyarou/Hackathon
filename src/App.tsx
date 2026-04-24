@@ -56,6 +56,8 @@ export default function App() {
   const [copiedUuid, setCopiedUuid] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const walletsRef = useRef(wallets);
+  useEffect(() => { walletsRef.current = wallets; }, [wallets]);
 
   // Mobile detection
   useEffect(() => {
@@ -115,6 +117,12 @@ export default function App() {
       
       // Periodically refresh balance
       if (uptime % 10 === 0) fetchConfig();
+      // Periodically refresh wallet balances (every ~15s)
+      if (uptime % 6 === 0) {
+        walletsRef.current.forEach(w => {
+          if (w.id && !w.id.startsWith('demo-')) fetchWalletBalance(w.id, true);
+        });
+      }
       
     }, 2500);
 
@@ -187,14 +195,25 @@ export default function App() {
   };
 
   // ── Circle Wallet Management (arc-engine integration) ──
-  const fetchWalletBalance = async (walletId: string) => {
+  const fetchWalletBalance = async (walletId: string, showNotification = false) => {
     try {
       const res = await fetch(`/api/wallets/${walletId}/balance`);
       const data = await res.json();
       if (data.success) {
-        setWallets(prev => prev.map(w =>
-          w.id === walletId ? { ...w, balance: data.balance } : w
-        ));
+        const newBalance = parseFloat(data.balance || '0');
+        setWallets(prev => {
+          const oldWallet = prev.find(w => w.id === walletId);
+          const oldBalance = parseFloat(oldWallet?.balance || '0');
+          // Notify if balance increased (funds received)
+          if (showNotification && newBalance > oldBalance && oldBalance > 0) {
+            addMessage('System', `💰 Balance updated: +${(newBalance - oldBalance).toFixed(2)} USDC received!`);
+          } else if (showNotification && newBalance > 0 && oldBalance === 0) {
+            addMessage('System', `💰 Initial balance detected: ${newBalance.toFixed(2)} USDC`);
+          }
+          return prev.map(w =>
+            w.id === walletId ? { ...w, balance: data.balance } : w
+          );
+        });
       }
     } catch (err) {
       console.error('Balance fetch error:', err);

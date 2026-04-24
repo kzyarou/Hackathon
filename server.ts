@@ -10,12 +10,14 @@ import { initiateDeveloperControlledWalletsClient, registerEntitySecretCiphertex
 dotenv.config();
 dotenv.config({ path: '.env.local', override: true });
 
-// Circle SDK client helper (returns null if config invalid)
+// Circle SDK client helper (returns null if config is empty/placeholder)
+// Note: old keys like "HACKATON_ENGINE" may work with @circle-fin/developer-controlled-wallets SDK
 function getCircleClient() {
   const apiKey = process.env.CIRCLE_API_KEY?.trim() || '';
   const entitySecret = process.env.ENTITY_SECRET?.trim() || '';
-  const hasValidKey = apiKey.includes(':') && apiKey.split(':').length >= 3;
-  if (!hasValidKey || !entitySecret) return null;
+  const hasKey = apiKey.length > 0 && apiKey !== 'MY_CIRCLE_API_KEY' && apiKey !== 'YOUR_CIRCLE_API_KEY';
+  const hasSecret = entitySecret.length > 0 && entitySecret !== 'MY_ENTITY_SECRET' && entitySecret !== 'YOUR_ENTITY_SECRET';
+  if (!hasKey || !hasSecret) return null;
   return initiateDeveloperControlledWalletsClient({ apiKey, entitySecret });
 }
 

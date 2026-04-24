@@ -173,15 +173,14 @@ export default function App() {
     }
   };
 
-  // Check if Circle API key is in valid format (ENV:ID:SECRET with 3 colon-separated parts)
+  // Check if Circle config is present (not empty/placeholder)
+  // Note: old keys like "HACKATON_ENGINE" may work with @circle-fin/developer-controlled-wallets SDK
   const isCircleConfigValid = () => {
     const key = process.env.CIRCLE_API_KEY || '';
     const walletId = process.env.CIRCLE_WALLET_ID || '';
-    // Valid Circle keys after May 2023 have format: ENVIRONMENT:KEY_ID:SECRET
-    // e.g. TEST_API_KEY:abc123:def456 or LIVE_API_KEY:abc123:def456
-    const hasValidKey = key.includes(':') && key.split(':').length >= 3;
-    const hasValidWallet = walletId && walletId !== '00000000-0000-0000-0000-000000000000';
-    return hasValidKey && hasValidWallet;
+    const hasKey = key.length > 0 && key !== 'MY_CIRCLE_API_KEY' && key !== 'YOUR_CIRCLE_API_KEY';
+    const hasWallet = walletId.length > 0 && walletId !== '00000000-0000-0000-0000-000000000000' && walletId !== 'MY_WALLET_ID';
+    return hasKey && hasWallet;
   };
 
   // ── Circle Wallet Management (arc-engine integration) ──
